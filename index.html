@@ -95,9 +95,9 @@ details .chk{display:flex;gap:8px;align-items:center}
     <div class="state">Estado: <b id="mstate">Detenido</b></div>
     <div id="pad">
       <div class="arrows">
-        <span data-d="q">↖</span><span data-d="w">↑</span><span data-d="e">↗</span>
+        <span data-d="q">↖️</span><span data-d="w">↑</span><span data-d="e">↗️</span>
         <span data-d="a">←</span><span></span><span data-d="d">→</span>
-        <span data-d="z">↙</span><span data-d="s">↓</span><span data-d="c">↘</span>
+        <span data-d="z">↙️</span><span data-d="s">↓</span><span data-d="c">↘️</span>
       </div>
       <div id="knob"></div>
     </div>
@@ -115,8 +115,8 @@ details .chk{display:flex;gap:8px;align-items:center}
 </main>
 
 <script>
-// ───── Configuración (debe coincidir con el Arduino) ─────
-const DEFAULTS = { name: "ESP32-Robot-BLE", service: "4fafc201-1fb5-459e-8fcc-c5c9c331914b", all: false };
+const STORAGE_KEY = "cfg_c3_v2";
+const DEFAULTS = { name: "Robot_C3_2Servos", service: "4fafc201-1fb5-459e-8fcc-c5c9c331914b", all: true };
 const CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 const FIXED_SPEED = 180, CLAMP_MS = 3000, COOLDOWN_MS = 500, HOME = 90;
 
@@ -128,7 +128,7 @@ const MODES = {
 };
 const $ = s => document.querySelector(s);
 let cfg = { ...DEFAULTS };
-try { cfg = { ...DEFAULTS, ...JSON.parse(localStorage.getItem("cfg") || "{}") }; } catch (e) {}
+try { cfg = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") }; } catch (e) {}
 
 let dev = null, ch = null, writeFn = null, connected = false, mode = "FutCar";
 let lastCmd = null, padDir = null, chain = Promise.resolve(), wake = null;
@@ -140,9 +140,8 @@ function log(msg) {
   const el = $("#log"); el.textContent = lines.join("\n"); el.scrollTop = el.scrollHeight;
 }
 
-// ───── Bluetooth ─────
 function send(t) {
-  if (!connected || !ch) return;
+  if (!connected || !ch || !writeFn) return;
   const data = new TextEncoder().encode(t);
   chain = chain.then(() => writeFn(data)).catch(e => log("⚠ No se pudo enviar " + t + ": " + e.message));
 }
@@ -162,23 +161,30 @@ function setConn(state, detail) {
 }
 
 async function connect() {
-  if (connected) { send("x"); await chain; dev.gatt.disconnect(); return; }
+  if (connected) { send("x"); await chain; if (dev && dev.gatt) dev.gatt.disconnect(); return; }
   setConn("connecting");
   try {
-    const opts = cfg.all ? { acceptAllDevices: true, optionalServices: [cfg.service] }
-                         : { filters: [{ name: cfg.name }], optionalServices: [cfg.service] };
+    const cleanName = (cfg.name || "").trim();
+    const opts = (cfg.all || !cleanName)
+      ? { acceptAllDevices: true, optionalServices: [cfg.service] }
+      : { filters: [{ name: cleanName }], optionalServices: [cfg.service] };
     dev = await navigator.bluetooth.requestDevice(opts);
-    dev.addEventListener("gattserverdisconnected", () => { ch = null; setConn("disconnected", "Conexión cerrada"); log("Conexión cerrada"); });
+    dev.addEventListener("gattserverdisconnected", () => { ch = null; writeFn = null; setConn("disconnected", "Conexión cerrada"); log("Conexión cerrada"); });
     const srv = await dev.gatt.connect();
     const svc = await srv.getPrimaryService(cfg.service);
     ch = await svc.getCharacteristic(CHAR_UUID);
-    const canWrite = ch.properties.write;
-    const fn = canWrite ? (ch.writeValueWithResponse || ch.writeValue) : (ch.writeValueWithoutResponse || ch.writeValue);
-    writeFn = fn.bind(ch);
-    setConn("connected", dev.name || cfg.name);
-    send("v" + String(FIXED_SPEED).padStart(3, "0")); send("g" + String(HOME).padStart(3, "0"));
+    if (ch.properties.writeWithoutResponse && ch.writeValueWithoutResponse) {
+      writeFn = ch.writeValueWithoutResponse.bind(ch);
+    } else if (ch.properties.write && ch.writeValueWithResponse) {
+      writeFn = ch.writeValueWithResponse.bind(ch);
+    } else {
+      writeFn = ch.writeValue.bind(ch);
+    }
+    setConn("connected", dev.name || cleanName || "ESP32-C3");
+    send("v" + String(FIXED_SPEED).padStart(3, "0"));
+    send("g" + String(HOME).padStart(3, "0"));
     servoSent = HOME; setServo(HOME);
-    log("Conectado. Velocidad fija " + FIXED_SPEED + ", servo en " + HOME + "°.");
+    log("Conectado a " + (dev.name || cleanName) + ". Velocidad " + FIXED_SPEED + ", servo " + HOME + "°.");
     try { wake = await navigator.wakeLock.request("screen"); } catch (e) {}
   } catch (e) {
     let m = e.message || e.name;
@@ -188,7 +194,6 @@ async function connect() {
   }
 }
 
-// ───── Movimiento: joystick + teclado ─────
 const pad = $("#pad"), knob = $("#knob");
 const DIRS = ["d", "e", "w", "q", "a", "z", "s", "c"];
 function moveKnob(x, y) { knob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`; }
@@ -239,7 +244,6 @@ addEventListener("keyup", e => {
   if (KM[k]) { keys.delete(KM[k]); setDir(padDir || kdir()); } else if (k === " ") clampUp();
 });
 
-// ───── Pinza ─────
 const clampBtn = $("#clamp");
 let busy = false, held = false, endAt = 0, timer = null;
 function look(s, left) {
@@ -275,7 +279,6 @@ function resetClamp() {
 clampBtn.addEventListener("pointerdown", e => { clampBtn.setPointerCapture(e.pointerId); clampDown(); });
 clampBtn.addEventListener("pointerup", clampUp); clampBtn.addEventListener("pointercancel", clampUp);
 
-// ───── Versión y servo ─────
 function applyMode() {
   $("#mdesc").textContent = MODES[mode];
   $("#pFut").hidden = mode !== "FutCar"; $("#pGlobo").hidden = mode !== "Globo";
@@ -301,26 +304,23 @@ $("#slider").addEventListener("input", e => setServo(+e.target.value));
   const b = document.createElement("button"); b.textContent = t; b.onclick = fn; $("#presets").append(b);
 });
 
-// ───── Seguridad ─────
 document.addEventListener("visibilitychange", async () => {
   if (document.hidden && connected) { if (lastCmd) stopAll("App en segundo plano"); clampUp(); }
   else if (connected) { try { wake = await navigator.wakeLock.request("screen"); } catch (e) {} }
 });
 addEventListener("blur", () => { if (connected && lastCmd) stopAll("Ventana sin foco"); clampUp(); });
 
-// ───── Ajustes ─────
 $("#cName").value = cfg.name; $("#cSvc").value = cfg.service; $("#cAll").checked = cfg.all;
 $("#save").onclick = () => {
   cfg = { name: $("#cName").value.trim() || DEFAULTS.name, service: $("#cSvc").value.trim().toLowerCase() || DEFAULTS.service, all: $("#cAll").checked };
-  try { localStorage.setItem("cfg", JSON.stringify(cfg)); } catch (e) {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg)); } catch (e) {}
   log("Ajustes guardados.");
 };
 
-// ───── Inicio ─────
 $("#conn").onclick = connect;
 if (!navigator.bluetooth) { $("#warn").hidden = false; $("#conn").disabled = true; }
 applyMode(); setConn("disconnected");
 log("Listo. Enciende el robot y toca «Conectar».");
 </script>
 </body>
-</html>
+  </html>
