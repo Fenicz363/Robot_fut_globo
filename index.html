@@ -115,10 +115,10 @@ details .chk{display:flex;gap:8px;align-items:center}
 </main>
 
 <script>
-const STORAGE_KEY = "cfg_c3_v2";
+const STORAGE_KEY = "cfg_c3_v3";
 const DEFAULTS = { name: "Robot_C3_2Servos", service: "4fafc201-1fb5-459e-8fcc-c5c9c331914b", all: true };
 const CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-const FIXED_SPEED = 180, CLAMP_MS = 3000, COOLDOWN_MS = 500, HOME = 90;
+const FIXED_SPEED = 255, CLAMP_MS = 3000, COOLDOWN_MS = 500, HOME = 90;
 
 const NAMES = { w:"Adelante", s:"Atrás", a:"Izquierda", d:"Derecha", q:"Adelante-Izquierda", e:"Adelante-Derecha",
                 z:"Atrás-Izquierda", c:"Atrás-Derecha", x:"Detener" };
@@ -195,7 +195,7 @@ async function connect() {
 }
 
 const pad = $("#pad"), knob = $("#knob");
-const DIRS = ["d", "e", "w", "q", "a", "z", "s", "c"];
+const DIRS = ["d", "c", "s", "z", "a", "q", "w", "e"];
 function moveKnob(x, y) { knob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`; }
 function show(cmd) {
   document.querySelectorAll(".arrows span[data-d]").forEach(s => s.classList.toggle("on", s.dataset.d === cmd));
@@ -215,7 +215,13 @@ function padUpdate(e) {
   const dx = e.clientX - (r.left + half), dy = e.clientY - (r.top + half), dist = Math.hypot(dx, dy);
   const k = dist > half * 0.55 ? half * 0.55 / dist : 1;
   knob.classList.remove("back"); moveKnob(dx * k, dy * k);
-  padDir = dist < half * 0.2 ? null : DIRS[Math.round(((Math.atan2(-dy, dx) * 180 / Math.PI + 360) % 360) / 45) % 8];
+  if (dist < half * 0.2) {
+    padDir = null;
+  } else {
+    const deg = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+    const idx = Math.floor(((deg + 22.5) % 360) / 45);
+    padDir = DIRS[idx];
+  }
   setDir(padDir || kdir());
 }
 pad.addEventListener("pointerdown", e => { if (!connected) return; pad.setPointerCapture(e.pointerId); padActive = true; padUpdate(e); });
@@ -323,4 +329,4 @@ applyMode(); setConn("disconnected");
 log("Listo. Enciende el robot y toca «Conectar».");
 </script>
 </body>
-  </html>
+                                                                                                                    </html>
