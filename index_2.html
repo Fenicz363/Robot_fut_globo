@@ -115,7 +115,7 @@ details .chk{display:flex;gap:8px;align-items:center}
 </main>
 
 <script>
-const STORAGE_KEY = "cfg_machicado_clean_v2";
+const STORAGE_KEY = "cfg_machicado_fixed_v3";
 const DEFAULTS = { name: "Robot_Machicado", service: "8a4e1001-6c3b-4d9a-9f12-3b7c8e901a01", all: false };
 const CHAR_UUID = "8a4e1002-6c3b-4d9a-9f12-3b7c8e901a01";
 const FIXED_SPEED = 255, CLAMP_MS = 3000, COOLDOWN_MS = 500, HOME = 90;
@@ -165,9 +165,9 @@ async function connect() {
   setConn("connecting");
   try {
     const cleanName = (cfg.name || "").trim();
-    const opts = (cfg.all || !cleanName)
+    const opts = cfg.all
       ? { acceptAllDevices: true, optionalServices: [cfg.service] }
-      : { filters: [{ name: cleanName }], optionalServices: [cfg.service] };
+      : { filters: [{ services: [cfg.service] }], optionalServices: [cfg.service] };
     dev = await navigator.bluetooth.requestDevice(opts);
     dev.addEventListener("gattserverdisconnected", () => { ch = null; writeFn = null; setConn("disconnected", "Conexión cerrada"); log("Conexión cerrada"); });
     const srv = await dev.gatt.connect();
@@ -184,7 +184,7 @@ async function connect() {
     send("v" + String(FIXED_SPEED).padStart(3, "0"));
     send("g" + String(HOME).padStart(3, "0"));
     servoSent = HOME; setServo(HOME);
-    log("Conectado a " + (dev.name || cleanName) + ". Velocidad " + FIXED_SPEED + ", servo " + HOME + "°.");
+    log("Conectado a " + (dev.name || cleanName) + ".");
     try { wake = await navigator.wakeLock.request("screen"); } catch (e) {}
   } catch (e) {
     let m = e.message || e.name;
